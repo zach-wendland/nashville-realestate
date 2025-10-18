@@ -1,0 +1,38 @@
+# Python cruft
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+
+# Virtual environments
+.env
+venv/
+.venv/
+env/
+ENV/
+
+# IDE clutter
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and temp
+*.log
+*.tmp
+
+# API keys and configs
+*.env
+config.py
+zillow_key.txt
+secrets.json
+
+# SQLite databases (optional)
+*.db
+*.sqlite3
+
+# Cached data
+*.cache/

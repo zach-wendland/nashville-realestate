@@ -1,0 +1,154 @@
+import requests
+from time import sleep
+import pandas as pd
+from datetime import date as dt 
+
+pd.set_option('display.max_columns', 100)
+
+currentDate = dt.today().strftime("%Y%m%d")
+
+BASE_URL = "https://zillow-com1.p.rapidapi.com/propertyExtendedSearch"
+API_KEY = "dfc421ade8msh736fe4d0243bddcp12f9dejsn9617d64ab9ee"
+API_HOST = "zillow-com1.p.rapidapi.com"
+
+headers = {
+    "x-rapidapi-key": API_KEY,
+    "x-rapidapi-host": API_HOST,
+}
+
+def fetch_page(params: dict, page_num: int) -> dict:
+    safe_page = max(0, min(int(page_num), 1))
+    req_params = {**params, "page": safe_page}
+    resp = requests.get(BASE_URL, headers=headers, params=req_params)
+    resp.raise_for_status()
+    return resp.json()
+
+def iterate_pages(params: dict, max_pages: int = 1) -> list:
+    results_all = []
+    total_pages_hint = None
+    for p in range(0, max_pages + 1):
+        print(f"Fetching page {p}")
+        sleep(5)
+        data = fetch_page(params, p)
+        if isinstance(data, list):
+            page_results = data
+            total_pages_hint = None
+        elif isinstance(data, dict):
+            if "results" in data:
+                page_results = data.get("results") or []
+            elif "props" in data:
+                page_results = data.get("props") or []
+            elif "matchingResults" in data:
+                page_results = data.get("matchingResults") or []
+            else:
+                page_results = (
+                    data.get("data", {}).get("props") if isinstance(data.get("data"), dict) else []
+                ) or []
+            total_pages_hint = data.get("totalPages", total_pages_hint)
+        else:
+            print(f"Unexpected response type: {type(data)}")
+            page_results = []
+        if not page_results:
+            print("No more results.")
+            break
+        results_all.extend(page_results)
+        if isinstance(total_pages_hint, int) and p >= total_pages_hint:
+            break
+    return results_all
+
+def split_locations(loc_str: str) -> list:
+    if not loc_str:
+        return []
+    parts = [s.strip() for s in loc_str.split(";") if s.strip()]
+    return parts[:5]
+
+if __name__ == "__main__":
+
+    base_params = {
+        "status_type": "ForRent",
+        "rentMinPrice": 1600,
+        "rentMaxPrice": 3000,
+        "bedsMin": 1,
+        "bedsMax": 2,
+        "sqftMin": 700,
+    }
+
+    # Up to 5 locations separated by ';'
+    location_spec = "37206 Nashville, TN; 37216, Nashville, TN"
+    locations = split_locations(location_spec)
+
+    aggregated = []
+    for loc in locations or [None]:
+        params = dict(base_params)
+        if loc:
+            params["location"] = loc
+        print(f"Location: {loc if loc else 'N/A'}")
+        loc_results = iterate_pages(params, max_pages=1)
+        print(f"Found {len(loc_results)} results for {loc}")
+        aggregated.extend(loc_results)
+
+    apiDf = pd.DataFrame(data=aggregated)
+
+    apiDf = apiDf.explode("units").reset_index(drop=True)
+    
+    unit_df = pd.json_normalize(apiDf["units"])
+
+    apiDf = pd.concat([apiDf, unit_df], axis=1)
+
+    print(f"Total aggregated results: {len(aggregated)}")
+
+    apiDf = apiDf.astype(str).applymap(str.upper)
+    apiDf.to_csv(f"nsh-rent{currentDate}.csv")
+
+    print(apiDf)
+
+    schemaDf = pd.read_excel("nashville-zillow-project.xlsx", sheet_name="zillow-rent-schema")
+    
+    colNames = list(schemaDf["name"])
+    nameNeeded = list(schemaDf["needed?"])
+
+    newColNames = []
+    emptyDf = pd.DataFrame()
+
+    for cols, names in zip(colNames, nameNeeded):
+        if names == "Y":
+            newColNames.append(cols)    
+
+    emptyDf = pd.DataFrame(columns=newColNames)
+    filledDf = apiDf[emptyDf.columns]
+
+    print(filledDf)
+
+
+"""
+    import sqlite3
+
+    table_name = "NashvilleRents01"
+
+    newColDtypeList = ["TEXT"] * len(newColNames)
+
+    # schema = dict(zip(newColNames, newColDtypeList))
+
+    schema_parts = [f"{col} {dtype}" for col, dtype in zip(newColNames, newColDtypeList)]
+    schema_sql = ", ".join(schema_parts)
+
+    print(schema_sql)
+
+    createStmt = f"CREATE TABLE IF NOT EXISTS {table_name} ({schema_sql});"
+    
+    conn = sqlite3.connect("TESTRENT01.db")
+    cursor = conn.cursor()
+
+    cursor.execute(createStmt)
+
+    filledDf.to_sql(table_name, conn, if_exists="replace",index=False)
+
+    conn.commit()
+    conn.close() 
+
+
+"""    
+
+
+    
+
