@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from time import sleep
@@ -11,8 +12,8 @@ import requests
 BASE_URL = "https://zillow-com1.p.rapidapi.com/propertyExtendedSearch"
 API_HOST = "zillow-com1.p.rapidapi.com"
 DEFAULT_RATE_LIMIT_SECONDS = 5
-DEFAULT_MAX_PAGES = 1
-DEFAULT_RETRIES = 3
+DEFAULT_MAX_PAGES = 5
+DEFAULT_RETRIES = 4
 
 
 class ZillowAPIError(RuntimeError):
@@ -30,6 +31,28 @@ def get_api_key() -> str:
 
 def build_headers(api_key: str) -> Dict[str, str]:
     return {"x-rapidapi-key": api_key, "x-rapidapi-host": API_HOST}
+
+
+def _extract_error_message(response: Optional[requests.Response]) -> str:
+    if response is None:
+        return ""
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+
+    if isinstance(payload, dict):
+        for key in ("message", "detail", "error", "errors", "title"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            if isinstance(value, list):
+                first = next((item for item in value if isinstance(item, str) and item.strip()), None)
+                if first:
+                    return first.strip()
+    text = response.text.strip()
+    return text[:200] if text else ""
 
 
 def _safe_page_number(page_num: int) -> int:
@@ -54,14 +77,24 @@ def fetch_page(
             response.raise_for_status()
             return response.json()
         except requests.HTTPError as exc:
-            status = exc.response.status_code if exc.response else "UNKNOWN"
-            print(f"HTTP error ({status}) on page {safe_page}, attempt {attempt}")
+            response_obj = exc.response
+            status = response_obj.status_code if response_obj else "UNKNOWN"
+            logging.warning(f"HTTP error ({status}) on page {safe_page}, attempt {attempt}")
+            if status == 404:
+                logging.info(f"No results for page {safe_page}; treating response as empty.")
+                return {"results": []}
             if status == 429 and attempt < retries:
                 sleep(cooldown * attempt)
                 continue
-            raise ZillowAPIError(f"HTTP error while fetching page {safe_page}") from exc
+            detail = _extract_error_message(response_obj)
+            message = f"HTTP error while fetching page {safe_page}"
+            if isinstance(status, int) and status in {401, 403}:
+                message += " (check RapidAPI key or subscription status)"
+            if detail:
+                message = f"{message}: {detail}"
+            raise ZillowAPIError(message) from exc
         except requests.RequestException as exc:
-            print(f"Network error on page {safe_page}, attempt {attempt}: {exc}")
+            logging.warning(f"Network error on page {safe_page}, attempt {attempt}: {exc}")
             if attempt < retries:
                 sleep(cooldown * attempt)
                 continue
@@ -94,17 +127,17 @@ def iterate_pages(
 ) -> List[Dict[str, Any]]:
     aggregated: List[Dict[str, Any]] = []
     for page in range(1, max_pages + 1):
-        print(f"Fetching page {page}")
+        logging.info(f"Fetching page {page}")
         payload = fetch_page(session, params, page)
         results = _extract_results(payload)
         if not results:
-            print(f"No results returned for page {page}; stopping pagination.")
+            logging.info(f"No results returned for page {page}; stopping pagination.")
             break
         aggregated.extend(results)
 
         total_pages = payload.get("totalPages") if isinstance(payload, dict) else None
         if isinstance(total_pages, int) and page >= total_pages:
-            print(f"Reached last page hinted by API ({total_pages}).")
+            logging.info(f"Reached last page hinted by API ({total_pages}).")
             break
         sleep(rate_limit_wait)
     return aggregated
@@ -130,11 +163,11 @@ def collect_properties(
             params = dict(base_params)
             if location:
                 params["location"] = location
-                print(f"Collecting data for location: {location}")
+                logging.info(f"Collecting data for location: {location}")
             else:
-                print("Collecting data with base parameters (no explicit location)")
+                logging.info("Collecting data with base parameters (no explicit location)")
             results = iterate_pages(session, params, max_pages=max_pages)
-            print(f"Retrieved {len(results)} records for {location or 'base query'}")
+            logging.info(f"Retrieved {len(results)} records for {location or 'base query'}")
             aggregated.extend(results)
     return aggregated
 
@@ -188,5 +221,5 @@ class FetchConfig:
 
 def fetch_dataframe(config: FetchConfig) -> pd.DataFrame:
     records = collect_properties(config.base_params, config.locations, max_pages=config.max_pages)
-    print(f"Total aggregated results: {len(records)}")
+    logging.info(f"Total aggregated results: {len(records)}")
     return records_to_dataframe(records)
