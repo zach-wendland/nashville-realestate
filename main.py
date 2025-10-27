@@ -30,7 +30,7 @@ BASE_PARAMS = {
     "sqftMin": 700,
 }
 RAW_LOCATIONS = "37206, Nashville, TN; 37216, Nashville, TN; 37207, Nashville, TN; 37209, Nashville, TN; Midtown, Nashville, TN"
-MAX_PAGES = 2
+MAX_PAGES = 5
 UNIT_FALLBACK_COLUMNS = {"PRICE": "PRICE_1", "BEDS": "BEDS_1", "BATHROOMS": "BATHROOMS_1"}
 
 
