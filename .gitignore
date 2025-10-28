@@ -36,3 +36,8 @@ secrets.json
 
 # Cached data
 *.cache/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
