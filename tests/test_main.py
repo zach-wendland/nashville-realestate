@@ -253,6 +253,7 @@ class TestConstants:
         assert "bedsMin" in BASE_PARAMS
         assert "bedsMax" in BASE_PARAMS
         assert "sqftMin" in BASE_PARAMS
+        assert "sqftMax" in BASE_PARAMS
 
     def test_base_params_price_range_valid(self):
         """Test that min price is less than max price."""
@@ -262,6 +263,18 @@ class TestConstants:
         """Test that min beds is less than or equal to max beds."""
         assert BASE_PARAMS["bedsMin"] <= BASE_PARAMS["bedsMax"]
 
+    def test_base_params_beds_max_is_four(self):
+        """Test that max beds is 4 (expanded from 2)."""
+        assert BASE_PARAMS["bedsMax"] == 4
+
+    def test_base_params_sqft_range_valid(self):
+        """Test that min sqft is less than max sqft."""
+        assert BASE_PARAMS["sqftMin"] < BASE_PARAMS["sqftMax"]
+
+    def test_base_params_sqft_max_is_3500(self):
+        """Test that max square feet is 3500."""
+        assert BASE_PARAMS["sqftMax"] == 3500
+
     def test_raw_locations_is_string(self):
         """Test that RAW_LOCATIONS is a string."""
         assert isinstance(RAW_LOCATIONS, str)
@@ -270,6 +283,19 @@ class TestConstants:
     def test_raw_locations_contains_nashville(self):
         """Test that RAW_LOCATIONS contains Nashville references."""
         assert "Nashville" in RAW_LOCATIONS or "37" in RAW_LOCATIONS
+
+    def test_raw_locations_has_twenty_locations(self):
+        """Test that RAW_LOCATIONS contains 20 zip codes."""
+        locations = [loc.strip() for loc in RAW_LOCATIONS.split(";") if loc.strip()]
+        assert len(locations) == 20
+
+    def test_raw_locations_includes_diverse_neighborhoods(self):
+        """Test that RAW_LOCATIONS includes various Nashville neighborhoods."""
+        # Check for key zip codes from different areas
+        assert "37206" in RAW_LOCATIONS  # East Nashville
+        assert "37203" in RAW_LOCATIONS  # Gulch
+        assert "37212" in RAW_LOCATIONS  # Midtown
+        assert "37027" in RAW_LOCATIONS  # Brentwood (suburban)
 
     def test_max_pages_is_positive(self):
         """Test that MAX_PAGES is a positive integer."""

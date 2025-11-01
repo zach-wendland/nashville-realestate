@@ -143,7 +143,7 @@ def iterate_pages(
     return aggregated
 
 
-def split_locations(raw_locations: str, limit: int = 5) -> List[str]:
+def split_locations(raw_locations: str, limit: int = 20) -> List[str]:
     if not raw_locations:
         return []
     cleaned = [chunk.strip() for chunk in raw_locations.split(";") if chunk.strip()]

@@ -362,11 +362,19 @@ class TestSplitLocations:
         assert split_locations("") == []
         assert split_locations("   ") == []
 
-    def test_split_locations_default_limit_is_five(self):
-        """Test that default limit is 5."""
-        raw = "L1; L2; L3; L4; L5; L6; L7; L8"
+    def test_split_locations_default_limit_is_twenty(self):
+        """Test that default limit is 20."""
+        raw = "; ".join([f"L{i}" for i in range(1, 26)])  # 25 locations
         result = split_locations(raw)
-        assert len(result) == 5
+        assert len(result) == 20
+
+    def test_split_locations_handles_twenty_locations(self):
+        """Test that 20 locations are properly handled."""
+        raw = "; ".join([f"Location {i}" for i in range(1, 21)])  # Exactly 20
+        result = split_locations(raw)
+        assert len(result) == 20
+        assert result[0] == "Location 1"
+        assert result[19] == "Location 20"
 
 
 class TestFlattenMapping:

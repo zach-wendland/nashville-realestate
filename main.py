@@ -26,10 +26,18 @@ BASE_PARAMS = {
     "rentMinPrice": 1600,
     "rentMaxPrice": 3000,
     "bedsMin": 1,
-    "bedsMax": 2,
+    "bedsMax": 4,
     "sqftMin": 700,
+    "sqftMax": 3500,
 }
-RAW_LOCATIONS = "37206, Nashville, TN; 37216, Nashville, TN; 37207, Nashville, TN; 37209, Nashville, TN; Midtown, Nashville, TN"
+# 20 Nashville zip codes covering diverse neighborhoods and rental markets
+# Urban Core: 37201, 37203, 37212, 37219, 37208, 37209
+# East Nashville: 37206, 37216, 37207
+# South/Southeast: 37204, 37211, 37210, 37217
+# North: 37218, 37214
+# West/Southwest: 37205, 37215, 37213
+# Suburban: 37027, 37221
+RAW_LOCATIONS = "37206, Nashville, TN; 37216, Nashville, TN; 37207, Nashville, TN; 37209, Nashville, TN; 37201, Nashville, TN; 37203, Nashville, TN; 37212, Nashville, TN; 37219, Nashville, TN; 37208, Nashville, TN; 37204, Nashville, TN; 37211, Nashville, TN; 37210, Nashville, TN; 37217, Nashville, TN; 37218, Nashville, TN; 37214, Nashville, TN; 37205, Nashville, TN; 37215, Nashville, TN; 37213, Nashville, TN; 37027, Brentwood, TN; 37221, Nashville, TN"
 MAX_PAGES = 2
 UNIT_FALLBACK_COLUMNS = {"PRICE": "PRICE_1", "BEDS": "BEDS_1", "BATHROOMS": "BATHROOMS_1"}
 
