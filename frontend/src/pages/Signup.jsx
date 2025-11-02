@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Home } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 import Input from '../components/common/Input'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
 
 export default function Signup() {
   const navigate = useNavigate()
+  const { register } = useAuth()
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -14,6 +16,7 @@ export default function Signup() {
     confirmPassword: '',
   })
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -22,10 +25,30 @@ export default function Signup() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    // Simulate signup
-    setTimeout(() => {
+    setError('')
+
+    // Validate passwords match
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match')
+      setLoading(false)
+      return
+    }
+
+    // Validate password length
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters')
+      setLoading(false)
+      return
+    }
+
+    try {
+      await register(formData.email, formData.password, formData.name)
       navigate('/dashboard')
-    }, 1000)
+    } catch (err) {
+      setError(err.message || 'Failed to create account')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -48,6 +71,12 @@ export default function Signup() {
           <p className="text-center text-gray-600 mb-6">
             Start finding deals in Nashville today
           </p>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input

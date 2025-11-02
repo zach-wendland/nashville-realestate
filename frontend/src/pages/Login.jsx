@@ -1,23 +1,32 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Home, Mail, Lock } from 'lucide-react'
+import { Home } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 import Input from '../components/common/Input'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
 
 export default function Login() {
   const navigate = useNavigate()
+  const { login } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    // Simulate login
-    setTimeout(() => {
+    setError('')
+
+    try {
+      await login(email, password)
       navigate('/dashboard')
-    }, 1000)
+    } catch (err) {
+      setError(err.message || 'Invalid email or password')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -37,6 +46,12 @@ export default function Login() {
           <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">
             Welcome Back
           </h2>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

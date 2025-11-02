@@ -1,32 +1,31 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { listingsApi } from '../services/api'
 import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import FilterPanel from '../components/dashboard/FilterPanel'
 import ListingCard from '../components/listings/ListingCard'
 import StatsCards from '../components/dashboard/StatsCards'
-import PriceChart from '../components/dashboard/PriceChart'
 import UpgradeModal from '../components/upgrade/UpgradeModal'
-import { fetchListings, fetchStats, fetchPriceHistory } from '../services/mockData'
 
 /**
  * Dashboard Page - Theory of Mind:
- * - Free tier shows 10 listings = immediate value
- * - Cards 11-20 blurred = FOMO (fear of missing out)
+ * - Shows accessible listings based on tier
+ * - Displays upgrade message when limit reached
  * - Stats visible = credibility
- * - Charts visible but limited = teaser of premium features
  * - Easy upgrade path throughout
  */
 
 export default function Dashboard() {
+  const { user, refreshUser } = useAuth()
   const [listings, setListings] = useState([])
+  const [total, setTotal] = useState(0)
+  const [accessible, setAccessible] = useState(0)
+  const [upgradeMessage, setUpgradeMessage] = useState('')
   const [stats, setStats] = useState(null)
-  const [priceHistory, setPriceHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({})
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-
-  // Free tier limitation
-  const FREE_TIER_LIMIT = 10
 
   useEffect(() => {
     loadData()
@@ -35,14 +34,21 @@ export default function Dashboard() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const [listingsData, statsData, priceData] = await Promise.all([
-        fetchListings(filters),
-        fetchStats(),
-        fetchPriceHistory()
-      ])
-      setListings(listingsData)
-      setStats(statsData)
-      setPriceHistory(priceData)
+      // Fetch listings
+      const listingsData = await listingsApi.getListings(filters)
+      setListings(listingsData.listings)
+      setTotal(listingsData.total)
+      setAccessible(listingsData.accessible)
+      setUpgradeMessage(listingsData.upgrade_message || '')
+
+      // Fetch market stats (premium users only)
+      if (user?.tier !== 'free') {
+        const statsData = await listingsApi.getMarketStats()
+        setStats(statsData)
+      }
+
+      // Refresh user to get updated daily_views_remaining
+      await refreshUser()
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
@@ -75,21 +81,35 @@ export default function Dashboard() {
 
           {/* Listings & Charts */}
           <div className="lg:col-span-3 space-y-6">
-            {/* Price Chart */}
-            {priceHistory.length > 0 && (
-              <PriceChart data={priceHistory} title="6-Month Price Trends" />
-            )}
-
             {/* Listings Grid */}
             <div>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold text-gray-900">
                   Available Rentals
                 </h2>
-                <p className="text-sm text-gray-600">
-                  Showing {Math.min(listings.length, FREE_TIER_LIMIT)} of {listings.length} listings
-                </p>
+                <div className="text-right">
+                  <p className="text-sm text-gray-600">
+                    Showing {listings.length} of {total} total listings
+                  </p>
+                  {user?.daily_views_remaining !== undefined && (
+                    <p className="text-xs text-gray-500">
+                      {user.daily_views_remaining} views remaining today
+                    </p>
+                  )}
+                </div>
               </div>
+
+              {upgradeMessage && (
+                <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg mb-6">
+                  <p className="font-medium">{upgradeMessage}</p>
+                  <button
+                    onClick={() => setShowUpgradeModal(true)}
+                    className="text-sm underline hover:text-yellow-900"
+                  >
+                    View upgrade options
+                  </button>
+                </div>
+              )}
 
               {loading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -103,25 +123,25 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {listings.map((listing, index) => (
+                  {listings.map((listing) => (
                     <ListingCard
                       key={listing.id}
                       listing={listing}
-                      isBlurred={index >= FREE_TIER_LIMIT}
+                      isBlurred={false}
                       onUpgrade={() => setShowUpgradeModal(true)}
                     />
                   ))}
                 </div>
               )}
 
-              {/* Upgrade CTA after free listings */}
-              {listings.length > FREE_TIER_LIMIT && (
+              {/* Upgrade CTA when there are more listings available */}
+              {total > listings.length && (
                 <div className="mt-8 bg-gradient-to-r from-primary-600 to-primary-800 rounded-lg p-8 text-center text-white">
                   <h3 className="text-2xl font-bold mb-2">
-                    {listings.length - FREE_TIER_LIMIT} More Listings Available
+                    {total - listings.length} More Listings Available
                   </h3>
                   <p className="mb-6 text-primary-100">
-                    Upgrade to see all {listings.length} listings and unlock premium features
+                    Upgrade to see all {total} listings and unlock premium features
                   </p>
                   <button
                     onClick={() => setShowUpgradeModal(true)}
