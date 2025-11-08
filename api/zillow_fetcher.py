@@ -143,10 +143,18 @@ def iterate_pages(
     return aggregated
 
 
-def split_locations(raw_locations: str, limit: int = 5) -> List[str]:
+def split_locations(raw_locations: str, limit: int | None = None) -> List[str]:
+    """Split a semicolon-delimited `raw_locations` string into a list of cleaned locations.
+
+    Args:
+        raw_locations: semicolon-separated locations (e.g. "37206, Nashville, TN; Midtown, Nashville, TN; ...").
+        limit: maximum number of locations to return. If None, return all parsed locations.
+    """
     if not raw_locations:
         return []
     cleaned = [chunk.strip() for chunk in raw_locations.split(";") if chunk.strip()]
+    if limit is None:
+        return cleaned
     return cleaned[:limit]
 
 

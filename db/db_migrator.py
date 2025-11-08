@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
@@ -35,7 +35,7 @@ def normalize_column_names(columns: Iterable[Any]) -> List[str]:
 
 
 def uppercase_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    return df.applymap(lambda value: "" if pd.isna(value) else str(value).upper())
+    return df.map(lambda value: "" if pd.isna(value) else str(value).upper())
 
 
 def load_schema(
@@ -70,7 +70,7 @@ def align_to_schema(df: pd.DataFrame, schema: pd.DataFrame) -> pd.DataFrame:
 
 def persist_to_csv(df: pd.DataFrame) -> str:
     CSV_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    filename = f"{CSV_PREFIX}{datetime.utcnow().strftime('%Y%m%d')}.csv"
+    filename = f"{CSV_PREFIX}{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
     file_path = CSV_OUTPUT_DIR / filename
     df.to_csv(file_path, index=False)
     return str(file_path)

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """Comprehensive tests for api/zillow_fetcher.py module."""
 from __future__ import annotations
 
@@ -601,3 +602,40 @@ class TestFetchDataFrame:
         config = FetchConfig(base_params={}, locations=["Nashville"], max_pages=1)
         df = fetch_dataframe(config)
         assert df.empty
+=======
+import pytest
+
+from api.zillow_fetcher import split_locations
+
+
+def test_split_locations_returns_all_when_limit_none():
+    raw = "37206, Nashville, TN; 37216, Nashville, TN; 37209, Nashville, TN; Midtown, Nashville, TN; Brentwood, TN; Nashville, TN"
+    result = split_locations(raw, limit=None)
+    assert isinstance(result, list)
+    assert len(result) == 6
+    assert result[0] == "37206, Nashville, TN"
+    assert result[-1] == "Nashville, TN"
+
+
+def test_split_locations_respects_limit():
+    raw = "a; b; c; d; e; f; g"
+    result = split_locations(raw, limit=3)
+    assert result == ["a", "b", "c"]
+
+
+def test_split_locations_empty_string():
+    assert split_locations("", limit=None) == []
+
+
+def test_split_locations_trims_whitespace_and_ignores_empty_tokens():
+    raw = "  a  ; ;  b ;  c ;"
+    result = split_locations(raw, limit=None)
+    assert result == ["a", "b", "c"]
+
+
+def test_split_locations_default_behavior_same_as_previous_limit():
+    # verify that passing a numeric limit still returns the expected slice
+    raw = ";".join([f"loc{i}" for i in range(1, 11)])
+    result_with_5 = split_locations(raw, limit=5)
+    assert result_with_5 == [f"loc{i}" for i in range(1, 6)]
+>>>>>>> e3a24a8 (Add unit tests for location processing and Zillow fetcher)
