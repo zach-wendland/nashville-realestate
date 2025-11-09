@@ -14,11 +14,13 @@ from db.db_migrator import (
     SQLITE_DB,
     TABLE_NAME,
     align_to_schema,
+    assign_primary_keys,
     ensure_table_exists,
     load_schema,
     normalize_column_names,
     persist_to_csv,
     persist_to_sqlite,
+    PRIMARY_KEY_COLUMN,
     uppercase_dataframe,
 )
 from api.zillow_fetcher import FetchConfig, fetch_dataframe, split_locations
@@ -56,7 +58,8 @@ def build_pipeline_dataframe(locations: Sequence[str], ingest_stamp: str) -> pd.
         return df_raw
     df_priority = _ensure_priority_columns(df_raw)
     df_priority["INGESTION_DATE"] = ingest_stamp
-    return uppercase_dataframe(df_priority)
+    normalized = uppercase_dataframe(df_priority)
+    return assign_primary_keys(normalized)
 
 
 def process_location_batch(locations: List[str], ingest_stamp: str) -> Optional[pd.DataFrame]:
@@ -86,7 +89,7 @@ def main() -> None:
             
         frame = pd.concat(all_frames, ignore_index=True)
 
-        schema = load_schema(extra_columns=["INGESTION_DATE"])
+        schema = load_schema(extra_columns=["INGESTION_DATE", PRIMARY_KEY_COLUMN])
         aligned = align_to_schema(frame, schema)
 
         ensure_table_exists(SQLITE_DB, TABLE_NAME, schema)

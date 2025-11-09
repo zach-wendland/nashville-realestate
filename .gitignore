@@ -37,6 +37,9 @@ secrets.json
 # Cached data
 *.cache/
 
+# Generated rental exports
+excel_files/*.csv
+
 # Test coverage
 .coverage
 htmlcov/

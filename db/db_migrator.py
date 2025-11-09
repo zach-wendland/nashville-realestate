@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import sqlite3
 from datetime import datetime, timezone
@@ -18,6 +19,8 @@ CSV_PREFIX = "nsh-rent"
 CSV_OUTPUT_DIR = EXCEL_DIR
 UNIQUE_KEY_COLUMNS: Tuple[str, ...] = ("DETAILURL",)
 KEY_JOINER = "__||__"
+PRIMARY_KEY_COLUMN = "RECORD_ID"
+PRIMARY_KEY_SOURCE_COLUMNS: Tuple[str, ...] = UNIQUE_KEY_COLUMNS
 
 
 def normalize_column_names(columns: Iterable[Any]) -> List[str]:
@@ -77,7 +80,12 @@ def persist_to_csv(df: pd.DataFrame) -> str:
 
 
 def build_sql_schema(schema: pd.DataFrame) -> str:
-    col_defs = [f"{col} TEXT" for col in schema["name"]]
+    col_defs = []
+    for col in schema["name"]:
+        if col == PRIMARY_KEY_COLUMN:
+            col_defs.append(f"{col} TEXT PRIMARY KEY")
+        else:
+            col_defs.append(f"{col} TEXT")
     return ", ".join(col_defs)
 
 
@@ -102,12 +110,68 @@ def _ensure_unique_index(conn: sqlite3.Connection, table_name: str, columns: Seq
         conn.commit()
 
 
+def _ensure_primary_key_schema(
+    conn: sqlite3.Connection, table_name: str, schema: pd.DataFrame
+) -> None:
+    info = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+    if not info:
+        return
+    for column in info:
+        name = column[1]
+        is_primary = column[5] == 1
+        if name == PRIMARY_KEY_COLUMN and is_primary:
+            return
+    _rebuild_table_with_primary_key(conn, table_name, schema)
+
+
+def _rebuild_table_with_primary_key(
+    conn: sqlite3.Connection, table_name: str, schema: pd.DataFrame
+) -> None:
+    backup_table = f"{table_name}__legacy_pk"
+    conn.execute(f"DROP TABLE IF EXISTS {backup_table}")
+    conn.commit()
+    conn.execute(f"ALTER TABLE {table_name} RENAME TO {backup_table}")
+    conn.commit()
+
+    schema_sql = build_sql_schema(schema)
+    conn.execute(f"CREATE TABLE {table_name} ({schema_sql});")
+    conn.commit()
+
+    insert_columns = schema["name"].tolist()
+    placeholders = ", ".join("?" for _ in insert_columns)
+    insert_sql = f"INSERT INTO {table_name} ({', '.join(insert_columns)}) VALUES ({placeholders})"
+    cursor = conn.execute(f"SELECT rowid, * FROM {backup_table}")
+    legacy_columns = [col[0] for col in cursor.description]
+    rows = cursor.fetchall()
+
+    for row in rows:
+        row_data = {legacy_columns[idx]: row[idx] for idx in range(len(legacy_columns))}
+        pk_seed_parts = []
+        for column in PRIMARY_KEY_SOURCE_COLUMNS:
+            pk_seed_parts.append(str(row_data.get(column, "") or "").strip().upper())
+        pk_seed = KEY_JOINER.join(pk_seed_parts)
+        pk_value = _hash_with_fallback(pk_seed, str(row_data.get("rowid", "")))
+
+        values: List[Any] = []
+        for column in insert_columns:
+            if column == PRIMARY_KEY_COLUMN:
+                values.append(pk_value)
+            else:
+                values.append(row_data.get(column, ""))
+        conn.execute(insert_sql, values)
+
+    conn.commit()
+    conn.execute(f"DROP TABLE {backup_table}")
+    conn.commit()
+
+
 def ensure_table_exists(db_path: Path | str, table_name: str, schema: pd.DataFrame) -> None:
     schema_sql = build_sql_schema(schema)
     create_statement = f"CREATE TABLE IF NOT EXISTS {table_name} ({schema_sql});"
     with sqlite3.connect(str(db_path)) as conn:
         conn.execute(create_statement)
         conn.commit()
+        _ensure_primary_key_schema(conn, table_name, schema)
         _ensure_unique_index(conn, table_name, UNIQUE_KEY_COLUMNS)
 
 
@@ -118,11 +182,55 @@ def _build_key_series(frame: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
     return safe.apply(lambda row: KEY_JOINER.join(row.tolist()), axis=1)
 
 
+def _build_primary_key_seed(frame: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
+    if frame.empty:
+        return pd.Series(dtype=str, index=frame.index)
+    if not columns:
+        return pd.Series([""] * len(frame), index=frame.index, dtype=str)
+    normalized = (
+        frame.loc[:, columns]
+        .fillna("")
+        .astype(str)
+        .apply(lambda col: col.str.strip().str.upper())
+    )
+    return normalized.apply(lambda row: KEY_JOINER.join(row.tolist()), axis=1)
+
+
+def _hash_with_fallback(seed: str, fallback: str | None = None) -> str:
+    candidate = (seed or "").strip()
+    if not candidate and fallback:
+        candidate = str(fallback).strip()
+    if not candidate:
+        return ""
+    digest = hashlib.sha256(candidate.upper().encode("utf-8")).hexdigest()
+    return digest.upper()
+
+
+def assign_primary_keys(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure the PRIMARY_KEY_COLUMN is populated for each row."""
+    if df.empty:
+        return df
+    frame = df.copy()
+    if PRIMARY_KEY_COLUMN not in frame.columns:
+        frame[PRIMARY_KEY_COLUMN] = ""
+    key_columns = [col for col in PRIMARY_KEY_SOURCE_COLUMNS if col in frame.columns]
+    if not key_columns:
+        return frame
+
+    seeds = _build_primary_key_seed(frame, key_columns)
+    fallback_series = pd.Series(frame.index.astype(str), index=frame.index)
+    primary_keys = seeds.combine(fallback_series, _hash_with_fallback)
+    missing_mask = frame[PRIMARY_KEY_COLUMN].astype(str).str.strip() == ""
+    frame.loc[missing_mask, PRIMARY_KEY_COLUMN] = primary_keys.loc[missing_mask]
+    return frame
+
+
 def persist_to_sqlite(df: pd.DataFrame, db_path: Path | str = SQLITE_DB, table_name: str = TABLE_NAME) -> None:
     frame = df.copy()
     if frame.empty:
         return
 
+    frame = assign_primary_keys(frame)
     key_columns = [col for col in UNIQUE_KEY_COLUMNS if col in frame.columns]
     ingestion_column = "INGESTION_DATE" if "INGESTION_DATE" in frame.columns else None
     frame = frame.fillna("")

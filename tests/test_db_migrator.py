@@ -10,10 +10,12 @@ import pytest
 
 from db.db_migrator import (
     KEY_JOINER,
+    PRIMARY_KEY_COLUMN,
     UNIQUE_KEY_COLUMNS,
     _build_key_series,
     _ensure_unique_index,
     align_to_schema,
+    assign_primary_keys,
     build_sql_schema,
     ensure_table_exists,
     load_schema,
@@ -84,6 +86,31 @@ class TestUppercaseDataFrame:
         result = uppercase_dataframe(df)
         assert result["price"].tolist() == ["2000", "1500"]
         assert result["beds"].tolist() == ["2", "1"]
+
+
+class TestAssignPrimaryKeys:
+    """Tests for assign_primary_keys function."""
+
+    def test_assign_primary_keys_generates_hash_from_unique_columns(self, sample_dataframe):
+        """Primary keys should be derived from the unique columns."""
+        df = sample_dataframe.drop(columns=[PRIMARY_KEY_COLUMN])
+        result = assign_primary_keys(df)
+        assert PRIMARY_KEY_COLUMN in result.columns
+        assert result[PRIMARY_KEY_COLUMN].nunique() == len(result)
+
+    def test_assign_primary_keys_respects_existing_values(self, sample_dataframe):
+        """Existing primary key values should not be overwritten."""
+        existing = sample_dataframe.copy()
+        original_keys = existing[PRIMARY_KEY_COLUMN].tolist()
+        result = assign_primary_keys(existing)
+        assert result[PRIMARY_KEY_COLUMN].tolist() == original_keys
+
+    def test_assign_primary_keys_handles_missing_unique_data(self):
+        """Rows without unique data should still receive deterministic keys."""
+        df = pd.DataFrame({"DETAILURL": ["", ""], "OTHER": ["A", "B"]})
+        result = assign_primary_keys(df)
+        assert PRIMARY_KEY_COLUMN in result.columns
+        assert all(value for value in result[PRIMARY_KEY_COLUMN])
 
     def test_uppercase_dataframe_handles_nan_as_empty_string(self):
         """Test that NaN values are converted to empty strings."""
@@ -254,6 +281,7 @@ class TestBuildSQLSchema:
         assert "LONGITUDE TEXT" in sql
         assert "LATITUDE TEXT" in sql
         assert "PRICE TEXT" in sql
+        assert f"{PRIMARY_KEY_COLUMN} TEXT PRIMARY KEY" in sql
 
     def test_build_sql_schema_comma_separated(self, sample_schema):
         """Test that columns are comma-separated."""
@@ -352,6 +380,36 @@ class TestEnsureTableExists:
             index_names = [idx[1] for idx in indexes]
             assert any("detailurl" in name.lower() for name in index_names)
 
+    def test_ensure_table_exists_marks_primary_key_column(self, mock_db, sample_schema):
+        """Primary key column should be defined with a PK constraint."""
+        ensure_table_exists(mock_db, "test_table", sample_schema)
+        with sqlite3.connect(str(mock_db)) as conn:
+            info = conn.execute("PRAGMA table_info('test_table')").fetchall()
+            record_col = next(row for row in info if row[1] == PRIMARY_KEY_COLUMN)
+            assert record_col[5] == 1  # pk flag
+
+    def test_ensure_table_exists_rebuilds_legacy_table(self, mock_db, sample_schema):
+        """Legacy tables without a primary key should be rebuilt safely."""
+        with sqlite3.connect(str(mock_db)) as conn:
+            conn.execute("CREATE TABLE test_table (DETAILURL TEXT, PRICE TEXT)")
+            conn.execute(
+                "INSERT INTO test_table (DETAILURL, PRICE) VALUES (?, ?)",
+                ("http://legacy", "2000"),
+            )
+            conn.commit()
+
+        ensure_table_exists(mock_db, "test_table", sample_schema)
+
+        with sqlite3.connect(str(mock_db)) as conn:
+            info = conn.execute("PRAGMA table_info('test_table')").fetchall()
+            record_col = next(row for row in info if row[1] == PRIMARY_KEY_COLUMN)
+            assert record_col[5] == 1
+            rows = conn.execute(
+                f"SELECT {PRIMARY_KEY_COLUMN}, DETAILURL FROM test_table"
+            ).fetchall()
+            assert len(rows) == 1
+            assert rows[0][0] != ""
+
 
 class TestBuildKeySeries:
     """Tests for _build_key_series function."""
@@ -398,6 +456,17 @@ class TestPersistToSQLite:
             cursor = conn.execute("SELECT COUNT(*) FROM test_table")
             count = cursor.fetchone()[0]
             assert count == len(sample_dataframe)
+
+    def test_persist_to_sqlite_populates_primary_keys(
+        self, mock_db, sample_dataframe, sample_schema
+    ):
+        """Inserted rows should always have a primary key value."""
+        ensure_table_exists(mock_db, "test_table", sample_schema)
+        df = sample_dataframe.drop(columns=[PRIMARY_KEY_COLUMN])
+        persist_to_sqlite(df, mock_db, "test_table")
+        with sqlite3.connect(str(mock_db)) as conn:
+            rows = conn.execute(f"SELECT {PRIMARY_KEY_COLUMN} FROM test_table").fetchall()
+            assert all(value[0] for value in rows)
 
     def test_persist_to_sqlite_handles_empty_dataframe(self, mock_db, sample_schema):
         """Test that empty DataFrame is handled gracefully."""

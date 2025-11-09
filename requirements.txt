@@ -1,12 +1,10 @@
 pandas
 requests
 openpyxl
-<<<<<<< HEAD
+python-dotenv
+streamlit
 pytest>=7.4.0
 pytest-cov>=4.1.0
 pytest-mock>=3.11.0
 responses>=0.23.0
 freezegun>=1.2.0
-=======
-python-dotenv
->>>>>>> e3a24a8 (Add unit tests for location processing and Zillow fetcher)

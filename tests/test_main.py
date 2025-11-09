@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 import main
+from db.db_migrator import PRIMARY_KEY_COLUMN
 from main import (
     BASE_PARAMS,
     MAX_PAGES,
@@ -89,6 +90,16 @@ class TestBuildPipelineDataFrame:
         result = build_pipeline_dataframe(["Nashville"], "20251027")
         assert "INGESTION_DATE" in result.columns
         assert result["INGESTION_DATE"].iloc[0] == "20251027"
+
+    @patch("main.fetch_dataframe")
+    def test_build_pipeline_dataframe_assigns_primary_key(self, mock_fetch):
+        """Test that a deterministic primary key is added."""
+        mock_fetch.return_value = pd.DataFrame(
+            {"detailUrl": ["https://www.zillow.com/homedetails/123-test-st"]}
+        )
+        result = build_pipeline_dataframe(["Nashville"], "20251027")
+        assert PRIMARY_KEY_COLUMN in result.columns
+        assert result[PRIMARY_KEY_COLUMN].iloc[0] != ""
 
     @patch("main.fetch_dataframe")
     def test_build_pipeline_dataframe_returns_empty_when_no_data(self, mock_fetch):
@@ -202,7 +213,7 @@ class TestMain:
         mock_persist_sqlite,
         mock_persist_csv,
     ):
-        """Test that INGESTION_DATE is passed as extra column to schema."""
+        """Test that schema loading includes all derived columns."""
         mock_split.return_value = ["Nashville"]
         mock_build.return_value = pd.DataFrame({"ID": ["1"], "INGESTION_DATE": ["20251027"]})
         mock_load_schema.return_value = pd.DataFrame({"name": ["ID", "INGESTION_DATE"]})
@@ -216,6 +227,7 @@ class TestMain:
         call_kwargs = mock_load_schema.call_args[1]
         assert "extra_columns" in call_kwargs
         assert "INGESTION_DATE" in call_kwargs["extra_columns"]
+        assert PRIMARY_KEY_COLUMN in call_kwargs["extra_columns"]
 
     @patch("main.build_pipeline_dataframe")
     @patch("main.split_locations")

@@ -9,6 +9,8 @@ from typing import Any, Dict, List
 import pandas as pd
 import pytest
 
+from db.db_migrator import PRIMARY_KEY_COLUMN, assign_primary_keys
+
 
 @pytest.fixture
 def temp_dir(tmp_path):
@@ -88,7 +90,7 @@ def sample_zillow_response() -> Dict[str, Any]:
 @pytest.fixture
 def sample_dataframe() -> pd.DataFrame:
     """Sample DataFrame with rental listing data."""
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "LONGITUDE": [-86.7816, -86.7817],
             "LATITUDE": [36.1627, 36.1628],
@@ -104,6 +106,8 @@ def sample_dataframe() -> pd.DataFrame:
             "ADDRESS": ["123 Test St, Nashville, TN", "456 Test Ave, Nashville, TN"],
         }
     )
+    frame = assign_primary_keys(frame)
+    return frame
 
 
 @pytest.fixture
@@ -121,6 +125,7 @@ def sample_schema() -> pd.DataFrame:
                 "LIVINGAREA",
                 "PROPERTYTYPE",
                 "ADDRESS",
+                PRIMARY_KEY_COLUMN,
             ]
         }
     )
