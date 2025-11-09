@@ -44,3 +44,6 @@ excel_files/*.csv
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Other
+*.dart
