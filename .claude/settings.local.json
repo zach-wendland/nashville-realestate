@@ -6,7 +6,13 @@
       "Bash(python -m pytest:*)",
       "Bash(python -m py_compile:*)",
       "Bash(python main.py:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(npx create-next-app:*)",
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(npm test)",
+      "Bash(cat:*)",
+      "Bash(npm run type-check:*)"
     ],
     "deny": [],
     "ask": []
