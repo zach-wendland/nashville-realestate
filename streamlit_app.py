@@ -10,7 +10,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from db.db_migrator import PRIMARY_KEY_COLUMN, SQLITE_DB, TABLE_NAME
-from __future__ import annotations
 from main import fetch_dataframe, main 
 
 SNAPSHOT_PATH = Path(__file__).resolve().parent / "seed_data" / "seed_rentals.csv"
