@@ -99,10 +99,6 @@ def main() -> None:
     if data_source == "snapshot":
         st.info("Showing the bundled snapshot. Run an ingestion to refresh with live data.")
 
-    power_bi_embed_url = "https://app.powerbi.com/view?r=eyJrIjoiODllYjBkZmQtN2ViOC00NmFmLTlkNWEtNzRmMTNmNTExZGM1IiwidCI6Ijk0NDE5YmE4LWNkZTItNDgxMC1iZDZjLTVmNzRlMWUyODkwYiJ9"
-
-    components.iframe(power_bi_embed_url, height=700)
-
     st.sidebar.header("Filters")
     min_price = float(df["PRICE"].min(skipna=True) or 0)
     max_price = float(df["PRICE"].max(skipna=True) or 5000)
@@ -131,6 +127,10 @@ def main() -> None:
         "Latest Ingestion",
         latest_ts.strftime("%Y-%m-%d") if latest_ts else "Unknown",
     )
+
+    power_bi_embed_url = "https://app.powerbi.com/view?r=eyJrIjoiODllYjBkZmQtN2ViOC00NmFmLTlkNWEtNzRmMTNmNTExZGM1IiwidCI6Ijk0NDE5YmE4LWNkZTItNDgxMC1iZDZjLTVmNzRlMWUyODkwYiJ9"
+
+    components.iframe(power_bi_embed_url, height=700)
 
     st.subheader("Listings")
     st.dataframe(
