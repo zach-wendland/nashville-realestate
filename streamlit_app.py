@@ -10,6 +10,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from db.db_migrator import PRIMARY_KEY_COLUMN, SQLITE_DB, TABLE_NAME
+from __future__ import annotations
+from main import fetch_dataframe, main 
 
 SNAPSHOT_PATH = Path(__file__).resolve().parent / "seed_data" / "seed_rentals.csv"
 
@@ -114,7 +116,7 @@ def main() -> None:
         placeholder="e.g. 37206 or 5th Ave",
     )
     if st.sidebar.button("Refresh data"):
-        _load_data.clear()
+        # _load_data.clear()
         df, data_source = _load_data(db_path, SNAPSHOT_PATH)
 
     filtered_df = _filter_dataframe(df, price_range, search_term)
@@ -128,9 +130,13 @@ def main() -> None:
         latest_ts.strftime("%Y-%m-%d") if latest_ts else "Unknown",
     )
 
+    st.markdown("---")  # Add a visual separator
+    st.subheader("Analytics Dashboard")
+    
     power_bi_embed_url = "https://app.powerbi.com/view?r=eyJrIjoiODllYjBkZmQtN2ViOC00NmFmLTlkNWEtNzRmMTNmNTExZGM1IiwidCI6Ijk0NDE5YmE4LWNkZTItNDgxMC1iZDZjLTVmNzRlMWUyODkwYiJ9"
-
     components.iframe(power_bi_embed_url, height=700)
+
+    st.markdown("---")  # Add another separator before listings
 
     st.subheader("Listings")
     st.dataframe(
