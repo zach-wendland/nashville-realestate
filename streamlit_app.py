@@ -7,21 +7,40 @@ from typing import Tuple
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from db.db_migrator import PRIMARY_KEY_COLUMN, SQLITE_DB, TABLE_NAME
 
+SNAPSHOT_PATH = Path(__file__).resolve().parent / "seed_data" / "seed_rentals.csv"
+
 
 @st.cache_data(ttl=60)
-def _load_data(db_path: Path) -> pd.DataFrame:
-    """Load the latest rental data from SQLite with basic type coercion."""
-    if not db_path.exists():
-        return pd.DataFrame()
+def _load_data(db_path: Path, snapshot_path: Path | None = None) -> Tuple[pd.DataFrame, str]:
+    """Load rental data from SQLite, falling back to a bundled snapshot when needed."""
+    data_source = "database"
+    df = pd.DataFrame()
 
-    with sqlite3.connect(db_path) as conn:
-        try:
-            df = pd.read_sql(f"SELECT * FROM {TABLE_NAME}", conn)
-        except sqlite3.OperationalError:
-            return pd.DataFrame()
+    if db_path.exists():
+        with sqlite3.connect(db_path) as conn:
+            try:
+                df = pd.read_sql(f"SELECT * FROM {TABLE_NAME}", conn)
+            except sqlite3.OperationalError:
+                df = pd.DataFrame()
+
+    df = _coerce_types(df)
+
+    if df.empty and snapshot_path and snapshot_path.exists():
+        df = pd.read_csv(snapshot_path)
+        df = _coerce_types(df)
+        data_source = "snapshot"
+
+    return df, data_source
+
+
+def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize numeric and datetime columns for dashboard use."""
+    if df.empty:
+        return df
 
     numeric_columns = ["PRICE", "BEDS", "BEDROOMS", "BATHROOMS", "LIVINGAREA"]
     for column in numeric_columns:
@@ -67,16 +86,22 @@ def _compute_metrics(df: pd.DataFrame) -> Tuple[int, float, datetime | None]:
 
 def main() -> None:
     st.set_page_config(page_title="Nashville Rentals Dashboard", layout="wide")
-    st.title("Nashville Rentals – Live View")
-    st.caption(f"SQLite source: `{SQLITE_DB}` · Table: `{TABLE_NAME}`")
+    st.title("Nashville Rentals — Live View")
 
     db_path = Path(SQLITE_DB)
-    with st.spinner("Loading data from SQLite…"):
-        df = _load_data(db_path)
+    with st.spinner("Loading rental listings..."):
+        df, data_source = _load_data(db_path, SNAPSHOT_PATH)
 
     if df.empty:
-        st.warning("No data available yet. Run `python main.py` to ingest listings.")
+        st.warning("No rental listings are available yet. Refresh or rerun the ingestion pipeline.")
         return
+
+    if data_source == "snapshot":
+        st.info("Showing the bundled snapshot. Run an ingestion to refresh with live data.")
+
+    power_bi_embed_url = "https://app.powerbi.com/view?r=eyJrIjoiODllYjBkZmQtN2ViOC00NmFmLTlkNWEtNzRmMTNmNTExZGM1IiwidCI6Ijk0NDE5YmE4LWNkZTItNDgxMC1iZDZjLTVmNzRlMWUyODkwYiJ9"
+
+    components.iframe(power_bi_embed_url, height=700)
 
     st.sidebar.header("Filters")
     min_price = float(df["PRICE"].min(skipna=True) or 0)
@@ -94,7 +119,7 @@ def main() -> None:
     )
     if st.sidebar.button("Refresh data"):
         _load_data.clear()
-        df = _load_data(db_path)
+        df, data_source = _load_data(db_path, SNAPSHOT_PATH)
 
     filtered_df = _filter_dataframe(df, price_range, search_term)
     total, avg_price, latest_ts = _compute_metrics(filtered_df)
