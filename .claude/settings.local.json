@@ -12,7 +12,18 @@
       "Bash(npm install:*)",
       "Bash(npm test)",
       "Bash(cat:*)",
-      "Bash(npm run type-check:*)"
+      "Bash(npm run type-check:*)",
+      "Bash(python:*)",
+      "WebFetch(domain:rapidapi.com)",
+      "WebSearch",
+      "Bash(taskkill:*)",
+      "Bash(nul)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(git add:*)",
+      "Bash(powershell:*)",
+      "Bash(dir /B /S *.py)",
+      "Bash(git mv:*)"
     ],
     "deny": [],
     "ask": []

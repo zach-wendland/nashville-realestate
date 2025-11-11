@@ -53,13 +53,23 @@ def _load_data(db_path: Path, table_name: str, snapshot_path: Path | None = None
 
 
 def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize numeric and datetime columns for dashboard use."""
+    """Safety net: ensure numeric columns are properly typed.
+
+    Note: pandas.read_sql may infer object dtype for numeric columns if there
+    are any empty strings, even though SQLite stores them with correct types.
+    This function ensures proper typing for dashboard operations.
+    """
     if df.empty:
         return df
 
-    numeric_columns = ["PRICE", "BEDS", "BEDROOMS", "BATHROOMS", "LIVINGAREA"]
+    # Convert numeric columns - pandas may read them as object type due to mixed content
+    numeric_columns = [
+        "PRICE", "BEDS", "BEDROOMS", "BATHROOMS", "LIVINGAREA",
+        "DAYSONZILLOW", "AVAILABILITYCOUNT", "LONGITUDE", "LATITUDE"
+    ]
     for column in numeric_columns:
         if column in df.columns:
+            # Always convert to ensure proper typing, even if schema is correct
             df[column] = pd.to_numeric(df[column], errors="coerce")
 
     if "INGESTION_DATE" in df.columns:

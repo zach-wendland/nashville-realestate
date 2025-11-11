@@ -35,7 +35,13 @@ def normalize_column_names(columns: Iterable[Any]) -> List[str]:
 
 
 def uppercase_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    return df.map(lambda value: "" if pd.isna(value) else str(value).upper())
+    """Convert string columns to uppercase while preserving numeric types."""
+    result = df.copy()
+    for col in result.columns:
+        # Only uppercase string/object columns; preserve numeric types
+        if result[col].dtype == 'object':
+            result[col] = result[col].map(lambda v: "" if pd.isna(v) else str(v).upper())
+    return result
 
 
 def load_schema(
@@ -47,12 +53,20 @@ def load_schema(
     if not schema_path.exists():
         raise FileNotFoundError(f"Schema file not found: {schema_path}")
     schema = pd.read_excel(schema_path, sheet_name=sheet)
-    required = schema[schema["needed?"].astype(str).str.upper().eq("Y")]["name"]
-    normalized = normalize_column_names(required.tolist())
-    schema_df = pd.DataFrame({"name": normalized})
+    required_mask = schema["needed?"].astype(str).str.upper().eq("Y")
+    required = schema[required_mask]
+    normalized = normalize_column_names(required["name"].tolist())
+    # Include dtype information from the schema
+    schema_df = pd.DataFrame({
+        "name": normalized,
+        "dtype": required["dtype"].fillna("STRING").tolist()
+    })
     if extra_columns:
         extra_normalized = normalize_column_names(extra_columns)
-        extras_df = pd.DataFrame({"name": extra_normalized})
+        extras_df = pd.DataFrame({
+            "name": extra_normalized,
+            "dtype": ["STRING"] * len(extra_normalized)
+        })
         schema_df = (
             pd.concat([schema_df, extras_df], ignore_index=True)
             .drop_duplicates(subset="name", keep="first")
@@ -77,12 +91,27 @@ def persist_to_csv(df: pd.DataFrame, csv_prefix: str) -> str:
 
 
 def build_sql_schema(schema: pd.DataFrame) -> str:
+    """Build SQL schema respecting dtype specifications from Excel schema."""
+    # Map Excel dtype specifications to SQLite types
+    dtype_map = {
+        'INTEGER': 'INTEGER',
+        'DECIMAL': 'REAL',
+        'NUMERIC': 'REAL',
+        'STRING': 'TEXT',
+        'LIST/BLOB': 'TEXT'
+    }
+
     col_defs = []
-    for col in schema["name"]:
+    for idx, row in schema.iterrows():
+        col = row['name']
+        # Get dtype from schema, default to TEXT
+        excel_dtype = str(row.get('dtype', 'STRING')).upper()
+        sql_type = dtype_map.get(excel_dtype, 'TEXT')
+
         if col == PRIMARY_KEY_COLUMN:
             col_defs.append(f"{col} TEXT PRIMARY KEY")
         else:
-            col_defs.append(f"{col} TEXT")
+            col_defs.append(f"{col} {sql_type}")
     return ", ".join(col_defs)
 
 

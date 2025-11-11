@@ -9,9 +9,8 @@ from typing import Any, Dict, List
 import pandas as pd
 import pytest
 
-from db.db_migrator import PRIMARY_KEY_COLUMN, assign_primary_keys
-from db.db_config import FORSALE_CONFIG, RENT_CONFIG, ListingConfig
-from db.db_migrator_unified import ensure_table_exists, load_schema
+from db.db_config import FORSALE_CONFIG, PRIMARY_KEY_COLUMN, RENT_CONFIG, ListingConfig
+from db.db_migrator_unified import assign_primary_keys, ensure_table_exists, load_schema
 
 
 @pytest.fixture
