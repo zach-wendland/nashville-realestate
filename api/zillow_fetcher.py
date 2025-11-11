@@ -9,6 +9,9 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 import pandas as pd
 import requests
 
+from api.rate_limiter import AdaptiveRateLimiter, RateLimitConfig, get_rate_limiter
+from api.request_cache import RequestCache, get_request_cache
+
 BASE_URL = "https://zillow-com1.p.rapidapi.com/propertyExtendedSearch"
 API_HOST = "zillow-com1.p.rapidapi.com"
 DEFAULT_RATE_LIMIT_SECONDS = 5
@@ -68,9 +71,43 @@ def fetch_page(
     page_num: int,
     retries: int = DEFAULT_RETRIES,
     cooldown: float = DEFAULT_RATE_LIMIT_SECONDS,
+    use_rate_limiter: bool = True,
 ) -> Dict[str, Any]:
     safe_page = _safe_page_number(page_num)
     request_params = {**params, "page": safe_page}
+
+    # Use adaptive rate limiter if enabled
+    if use_rate_limiter:
+        limiter = get_rate_limiter(RateLimitConfig(
+            tokens_per_second=1.0 / cooldown,
+            max_retries=retries,
+            base_backoff=cooldown
+        ))
+
+        def _make_request():
+            response = session.get(BASE_URL, params=request_params, timeout=30)
+            if response.status_code == 404:
+                logging.info(f"No results for page {safe_page}; treating response as empty.")
+                # Don't raise, return response
+            return response
+
+        try:
+            response = limiter.execute_with_retry(_make_request, f"Page {safe_page}")
+            if response.status_code == 404:
+                return {"results": []}
+            return response.json()
+        except requests.HTTPError as exc:
+            response_obj = exc.response
+            status = response_obj.status_code if response_obj else "UNKNOWN"
+            detail = _extract_error_message(response_obj)
+            message = f"HTTP error while fetching page {safe_page}"
+            if isinstance(status, int) and status in {401, 403}:
+                message += " (check RapidAPI key or subscription status)"
+            if detail:
+                message = f"{message}: {detail}"
+            raise ZillowAPIError(message) from exc
+
+    # Fallback to original logic if rate limiter disabled
     for attempt in range(1, retries + 1):
         try:
             response = session.get(BASE_URL, params=request_params, timeout=30)
@@ -124,11 +161,12 @@ def iterate_pages(
     params: Dict[str, Any],
     max_pages: int = DEFAULT_MAX_PAGES,
     rate_limit_wait: float = DEFAULT_RATE_LIMIT_SECONDS,
+    use_rate_limiter: bool = True,
 ) -> List[Dict[str, Any]]:
     aggregated: List[Dict[str, Any]] = []
     for page in range(1, max_pages + 1):
         logging.info(f"Fetching page {page}")
-        payload = fetch_page(session, params, page)
+        payload = fetch_page(session, params, page, use_rate_limiter=use_rate_limiter)
         results = _extract_results(payload)
         if not results:
             logging.info(f"No results returned for page {page}; stopping pagination.")
@@ -139,7 +177,10 @@ def iterate_pages(
         if isinstance(total_pages, int) and page >= total_pages:
             logging.info(f"Reached last page hinted by API ({total_pages}).")
             break
-        sleep(rate_limit_wait)
+
+        # Only sleep if not using rate limiter (rate limiter handles pacing)
+        if not use_rate_limiter:
+            sleep(rate_limit_wait)
     return aggregated
 
 
@@ -162,9 +203,23 @@ def collect_properties(
     base_params: Dict[str, Any],
     locations: Sequence[Optional[str]],
     max_pages: int = DEFAULT_MAX_PAGES,
+    use_cache: bool = True,
+    cache_ttl: int = 3600,
 ) -> List[Dict[str, Any]]:
     api_key = get_api_key()
     aggregated: List[Dict[str, Any]] = []
+
+    # Initialize cache if enabled
+    cache = None
+    if use_cache:
+        from pathlib import Path
+        cache_dir = Path(__file__).resolve().parents[1] / ".api_cache"
+        cache = get_request_cache(
+            max_size=1000,
+            ttl_seconds=cache_ttl,
+            disk_cache_dir=cache_dir
+        )
+
     with requests.Session() as session:
         session.headers.update(build_headers(api_key))
         for location in locations or [None]:
@@ -174,9 +229,36 @@ def collect_properties(
                 logging.info(f"Collecting data for location: {location}")
             else:
                 logging.info("Collecting data with base parameters (no explicit location)")
+
+            # Create cache key with all relevant parameters
+            cache_params = {**params, "max_pages": max_pages}
+
+            # Check cache first
+            if cache:
+                cached_results = cache.get(cache_params)
+                if cached_results is not None:
+                    logging.info(f"Using cached results for {location or 'base query'} ({len(cached_results)} records)")
+                    aggregated.extend(cached_results)
+                    continue
+
+            # Cache miss - fetch from API
             results = iterate_pages(session, params, max_pages=max_pages)
             logging.info(f"Retrieved {len(results)} records for {location or 'base query'}")
+
+            # Store in cache
+            if cache:
+                cache.put(cache_params, results)
+
             aggregated.extend(results)
+
+    # Log cache statistics
+    if cache:
+        stats = cache.get_stats()
+        logging.info(
+            f"Cache stats: {stats['hits']} hits, {stats['misses']} misses, "
+            f"{stats['hit_rate']:.1f}% hit rate"
+        )
+
     return aggregated
 
 
