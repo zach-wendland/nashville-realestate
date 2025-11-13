@@ -36,7 +36,6 @@ secrets.json
 
 # Cached data
 *.cache/
-.api_cache/
 
 # Generated rental exports
 excel_files/*.csv
@@ -48,5 +47,3 @@ htmlcov/
 
 # Other
 *.dart
-TSA-volume/
-nul

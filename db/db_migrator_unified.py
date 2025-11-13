@@ -19,6 +19,14 @@ from db.db_config import (
     SQLITE_DB,
 )
 
+SQL_TYPE_MAP = {
+    'INTEGER': 'INTEGER',
+    'DECIMAL': 'REAL',
+    'NUMERIC': 'REAL',
+    'STRING': 'TEXT',
+    'LIST/BLOB': 'TEXT',
+}
+
 
 def normalize_column_names(columns: Iterable[Any]) -> List[str]:
     seen: Dict[str, int] = {}
@@ -93,26 +101,47 @@ def persist_to_csv(df: pd.DataFrame, csv_prefix: str) -> str:
 def build_sql_schema(schema: pd.DataFrame) -> str:
     """Build SQL schema respecting dtype specifications from Excel schema."""
     # Map Excel dtype specifications to SQLite types
-    dtype_map = {
-        'INTEGER': 'INTEGER',
-        'DECIMAL': 'REAL',
-        'NUMERIC': 'REAL',
-        'STRING': 'TEXT',
-        'LIST/BLOB': 'TEXT'
-    }
-
     col_defs = []
     for idx, row in schema.iterrows():
         col = row['name']
         # Get dtype from schema, default to TEXT
         excel_dtype = str(row.get('dtype', 'STRING')).upper()
-        sql_type = dtype_map.get(excel_dtype, 'TEXT')
+        sql_type = _sql_type_from_excel(excel_dtype)
 
         if col == PRIMARY_KEY_COLUMN:
             col_defs.append(f"{col} TEXT PRIMARY KEY")
         else:
             col_defs.append(f"{col} {sql_type}")
     return ", ".join(col_defs)
+
+
+def _sql_type_from_excel(value: str) -> str:
+    key = (value or "STRING").strip().upper()
+    return SQL_TYPE_MAP.get(key, "TEXT")
+
+
+def _sql_type_matches(actual: str, expected: str) -> bool:
+    actual_norm = (actual or "").upper()
+    expected_norm = (expected or "TEXT").upper()
+
+    if expected_norm == "INTEGER":
+        return "INT" in actual_norm
+    if expected_norm == "REAL":
+        return any(token in actual_norm for token in ("REAL", "NUMERIC", "DECIMAL", "DOUBLE", "FLOAT"))
+    return any(token in actual_norm for token in ("TEXT", "CHAR", "CLOB"))
+
+
+def _schema_needs_rebuild(info_rows: Sequence[tuple], schema: pd.DataFrame) -> bool:
+    actual_columns = {row[1]: row[2] for row in info_rows}
+    for _, row in schema.iterrows():
+        col = row["name"]
+        expected_type = _sql_type_from_excel(str(row.get("dtype", "STRING")))
+        actual_type = actual_columns.get(col)
+        if not actual_type:
+            return True
+        if not _sql_type_matches(actual_type, expected_type):
+            return True
+    return False
 
 
 def _ensure_unique_index(conn: sqlite3.Connection, table_name: str, columns: Sequence[str]) -> None:
@@ -142,12 +171,10 @@ def _ensure_primary_key_schema(
     info = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
     if not info:
         return
-    for column in info:
-        name = column[1]
-        is_primary = column[5] == 1
-        if name == PRIMARY_KEY_COLUMN and is_primary:
-            return
-    _rebuild_table_with_primary_key(conn, table_name, schema, unique_key_columns)
+    has_primary_key = any(column[1] == PRIMARY_KEY_COLUMN and column[5] == 1 for column in info)
+    schema_mismatch = _schema_needs_rebuild(info, schema)
+    if not has_primary_key or schema_mismatch:
+        _rebuild_table_with_primary_key(conn, table_name, schema, unique_key_columns)
 
 
 def _rebuild_table_with_primary_key(
